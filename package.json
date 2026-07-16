@@ -14,10 +14,44 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "WORKERMOYU",
+      "properties": {
+        "workermoyu.barName": {
+          "type": "string",
+          "default": "抗压背锅吧",
+          "description": "贴吧吧名（如 抗压背锅吧 等）"
+        },
+        "workermoyu.bduss": {
+          "type": "string",
+          "default": "",
+          "description": "百度 BDUSS cookie（浏览器登录百度后 F12 -> Application -> Cookies -> BDUSS 的值）"
+        },
+        "workermoyu.maxPosts": {
+          "type": "number",
+          "default": 20,
+          "minimum": 5,
+          "maximum": 50,
+          "description": "侧边栏显示的帖子数量"
+        }
+      }
+    },
     "commands": [
       {
-        "command": "workermoyu.openBilibili",
-        "title": "关注塔菲喵"
+        "command": "workermoyu.refresh",
+        "title": "刷新帖子"
+      },
+      {
+        "command": "workermoyu.openThread",
+        "title": "打开帖子"
+      },
+      {
+        "command": "workermoyu.setBDUSS",
+        "title": "设置 BDUSS（百度登录）"
+      },
+      {
+        "command": "workermoyu.setBarName",
+        "title": "切换贴吧"
       }
     ],
     "viewsContainers": {
@@ -25,7 +59,7 @@
         {
           "id": "workermoyu",
           "title": "WORKERMOYU",
-          "icon": "$(symbol-misc)"
+          "icon": "$(eye)"
         }
       ]
     },
@@ -35,7 +69,16 @@
           "type": "tree",
           "id": "workermoyu.sidebar",
           "name": "摸鱼中...",
-          "icon": "$(symbol-misc)"
+          "icon": "$(eye)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "workermoyu.refresh",
+          "when": "view == workermoyu.sidebar",
+          "group": "navigation"
         }
       ]
     }
