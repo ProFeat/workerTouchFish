@@ -176,7 +176,7 @@ export function activate(context: vscode.ExtensionContext) {
       const value = await vscode.window.showInputBox({
         prompt: '想摸哪个吧？输入贴吧名称',
         value: current,
-        placeHolder: '如 抗压背锅吧、asoul、原神',
+        placeHolder: '如 抗压背锅吧',
         ignoreFocusOut: true,
       });
       if (value !== undefined && value.trim()) {
