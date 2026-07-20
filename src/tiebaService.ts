@@ -95,38 +95,54 @@ export async function fetchThreadContent(tid: string, cookie: string, maxReplies
   }));
 }
 
-export async function fetchThreads(barName: string, cookie: string, maxCount: number = 20): Promise<TiebaThread[]> {
+export async function fetchThreads(barName: string, cookie: string, maxCount: number = 20, maxPages: number = 1): Promise<TiebaThread[]> {
   if (!cookie) {
     throw new Error('请先设置 Cookie（Ctrl+Shift+P → 设置 BDUSS）');
   }
 
-  const params: Record<string, string> = {
-    kw: barName,
-    pn: '1',
-    rn: String(maxCount),
-  };
-  const sign = makeSign(params);
-  const query = Object.entries(params)
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-    .join('&');
-  const path = `/c/f/frs/page?${query}&sign=${sign}`;
+  const seen = new Set<string>();
+  const allThreads: TiebaThread[] = [];
 
-  const data = await httpsGetJson(path, cookie);
+  for (let page = 1; page <= maxPages; page++) {
+    const params: Record<string, string> = {
+      kw: barName,
+      pn: String(page),
+      rn: String(maxCount),
+    };
+    const sign = makeSign(params);
+    const query = Object.entries(params)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&');
+    const path = `/c/f/frs/page?${query}&sign=${sign}`;
 
-  if (data.error_code && data.error_code !== '0') {
-    throw new Error(data.error_msg || `API 错误 (${data.error_code})`);
+    const data = await httpsGetJson(path, cookie);
+
+    if (data.error_code && data.error_code !== '0') {
+      throw new Error(data.error_msg || `API 错误 (${data.error_code})`);
+    }
+
+    const threadList: any[] = data.thread_list ?? [];
+    if (threadList.length === 0) break; // 没有更多数据了
+
+    for (const t of threadList) {
+      const tid = String(t.id ?? t.tid ?? '0');
+      if (seen.has(tid)) continue;
+      seen.add(tid);
+
+      const title = (t.title ?? '(无标题)')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      allThreads.push({
+        tid,
+        title,
+        replyNum: t.reply_num ?? 0,
+        author: t.author?.name ?? '未知',
+      });
+
+      if (allThreads.length >= maxCount) break;
+    }
+
+    if (allThreads.length >= maxCount) break;
   }
 
-  const threadList: any[] = data.thread_list ?? [];
-
-  return threadList.slice(0, maxCount).map((t: any) => {
-    const title = (t.title ?? '(无标题)')
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-    return {
-      tid: String(t.id ?? t.tid ?? '0'),
-      title,
-      replyNum: t.reply_num ?? 0,
-      author: t.author?.name ?? '未知',
-    };
-  });
+  return allThreads;
 }

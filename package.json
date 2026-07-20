@@ -35,6 +35,13 @@
           "minimum": 5,
           "maximum": 50,
           "description": "侧边栏显示的帖子数量"
+        },
+        "workermoyu.maxPages": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "抓取帖子的页数（每页最多50条，翻页可增加数据新鲜度）"
         }
       }
     },

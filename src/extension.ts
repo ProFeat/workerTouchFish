@@ -109,9 +109,10 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
     this.cookie = cookieFromSecrets || vscode.workspace.getConfiguration('workermoyu').get('bduss', '');
     const barName = vscode.workspace.getConfiguration('workermoyu').get('barName', '抗压背锅吧');
     const maxPosts = vscode.workspace.getConfiguration('workermoyu').get('maxPosts', 20);
+    const maxPages = vscode.workspace.getConfiguration('workermoyu').get('maxPages', 3);
 
     try {
-      this.threads = await fetchThreads(barName, this.cookie, maxPosts);
+      this.threads = await fetchThreads(barName, this.cookie, maxPosts, maxPages);
     } catch (err: any) {
       this.threads = [];
       vscode.window.showErrorMessage(`摸鱼失败: ${err.message}`);
