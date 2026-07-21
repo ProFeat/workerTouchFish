@@ -24,11 +24,71 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
   private loading = false;
   private cookie = '';
 
+  // 伪装模式相关
+  private disguised = false;
+  private inactivityTimer: NodeJS.Timeout | undefined;
+
+  isDisguised() { return this.disguised; }
+
+  setDisguised(value: boolean) {
+    if (this.disguised === value) return;
+    this.disguised = value;
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  resetInactivityTimer() {
+    if (this.disguised) {
+      this.setDisguised(false);
+    }
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+    }
+    this.inactivityTimer = setTimeout(() => {
+      this.setDisguised(true);
+    }, 3_000);
+  }
+
+  private generateFakeFiles(): MoyuItem[] {
+    const now = new Date();
+    const files = [
+      { name: '📁 src', desc: '', icon: '📁' },
+      { name: '  📄 main.ts', desc: '2,431 B 修改于 ' + this.formatTime(now), icon: '📄' },
+      { name: '  📄 App.tsx', desc: '8,217 B 修改于 ' + this.formatTime(new Date(now.getTime() - 60000)), icon: '📄' },
+      { name: '  📄 styles.css', desc: '1,024 B • 未暂存', icon: '📄' },
+      { name: '  📁 components', desc: '', icon: '📁' },
+      { name: '    📄 Header.tsx', desc: '3,145 B 修改于 ' + this.formatTime(new Date(now.getTime() - 120000)), icon: '📄' },
+      { name: '    📄 Sidebar.tsx', desc: '5,672 B • 已修改', icon: '📄' },
+      { name: '    📄 Footer.tsx', desc: '892 B 修改于 ' + this.formatTime(new Date(now.getTime() - 300000)), icon: '📄' },
+      { name: '  📁 utils', desc: '', icon: '📁' },
+      { name: '    📄 api.ts', desc: '4,210 B 修改于 ' + this.formatTime(new Date(now.getTime() - 180000)), icon: '📄' },
+      { name: '    📄 helpers.ts', desc: '1,563 B • 未暂存', icon: '📄' },
+      { name: '  📄 index.ts', desc: '321 B 修改于 ' + this.formatTime(new Date(now.getTime() - 3600000)), icon: '📄' },
+      { name: '📁 tests', desc: '', icon: '📁' },
+      { name: '  📄 main.spec.ts', desc: '1,892 B 修改于 ' + this.formatTime(new Date(now.getTime() - 86400000)), icon: '📄' },
+      { name: '  📄 utils.test.ts', desc: '2,104 B 修改于 ' + this.formatTime(new Date(now.getTime() - 86400000)), icon: '📄' },
+      { name: '📄 package.json', desc: '892 B 修改于 ' + this.formatTime(new Date(now.getTime() - 7200000)), icon: '📄' },
+      { name: '📄 tsconfig.json', desc: '456 B 修改于 ' + this.formatTime(new Date(now.getTime() - 7200000)), icon: '📄' },
+      { name: '📄 README.md', desc: '2,048 B 修改于 ' + this.formatTime(new Date(now.getTime() - 86400000 * 2)), icon: '📄' },
+      { name: '📄 .eslintrc.json', desc: '312 B 修改于 ' + this.formatTime(new Date(now.getTime() - 86400000 * 7)), icon: '📄' },
+    ];
+    return files.map(f => new MoyuItem(f.name, f.desc));
+  }
+
+  private formatTime(date: Date): string {
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
   getTreeItem(element: MoyuItem): vscode.TreeItem {
     return element;
   }
 
   getChildren(element?: MoyuItem): Thenable<MoyuItem[]> {
+    // 伪装模式：显示假文件列表
+    if (!element && this.disguised) {
+      return Promise.resolve(this.generateFakeFiles());
+    }
     // 展开帖子：显示楼层回复内容
     if (element) {
       if (element.thread) {
@@ -149,6 +209,35 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.env.openExternal(vscode.Uri.parse(`https://tieba.baidu.com/p/${thread.tid}`));
     })
   );
+
+  // 伪装模式：手动切换
+  context.subscriptions.push(
+    vscode.commands.registerCommand('workermoyu.toggleDisguise', () => {
+      provider.setDisguised(!provider.isDisguised());
+      vscode.window.showInformationMessage(
+        provider.isDisguised() ? '🕵️ 伪装已开启' : '🐟 伪装已关闭，继续摸鱼'
+      );
+    })
+  );
+
+  // 失焦自动伪装：VS Code 窗口失去焦点时
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState(state => {
+      if (!state.focused) {
+        provider.setDisguised(true);
+      }
+    })
+  );
+
+  // 无操作自动伪装：用户停止交互 30 秒后
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection(() => provider.resetInactivityTimer())
+  );
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => provider.resetInactivityTimer())
+  );
+  // 启动时也初始化一次计时器
+  provider.resetInactivityTimer();
 
   // 设置 Cookie 命令：弹出输入框
   context.subscriptions.push(

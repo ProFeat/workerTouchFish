@@ -2,7 +2,7 @@
   "name": "workermoyu",
   "displayName": "WORKERMOYU",
   "description": "I LIKE TOUCH FISH - 上班摸鱼必备插件",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "publisher": "MRQUIN2123",
   "engines": {
     "vscode": "^1.85.0"
@@ -61,6 +61,10 @@
       {
         "command": "workermoyu.setBarName",
         "title": "切换贴吧"
+      },
+      {
+        "command": "workermoyu.toggleDisguise",
+        "title": "伪装模式：切换假文件列表"
       }
     ],
     "viewsContainers": {
