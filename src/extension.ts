@@ -88,12 +88,12 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
     }
     if (this.threads.length === 0) {
       return Promise.resolve([
-        new MoyuItem('🐟  I LIKE TOUCH FISHN  🐟'),
+        new MoyuItem('Workspace Files'),
       ]);
     }
 
     const items: MoyuItem[] = [
-      new MoyuItem('🐟  I LIKE TOUCH FISHN  🐟', `📌 ${this.threads.length}条帖子`),
+      new MoyuItem('Workspace Files', `📌 ${this.threads.length}条帖子`),
       new MoyuItem('─'.repeat(30), undefined, undefined, '帖子列表'),
     ];
 

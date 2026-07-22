@@ -2,7 +2,7 @@
   "name": "workermoyu",
   "displayName": "WORKERMOYU",
   "description": "I LIKE TOUCH FISH - 上班摸鱼必备插件",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "MRQUIN2123",
   "engines": {
     "vscode": "^1.85.0"
@@ -71,8 +71,8 @@
       "activitybar": [
         {
           "id": "workermoyu",
-          "title": "WORKERMOYU",
-          "icon": "$(eye)"
+          "title": "Workspace Tools",
+          "icon": "$(files)"
         }
       ]
     },
@@ -81,8 +81,8 @@
         {
           "type": "tree",
           "id": "workermoyu.sidebar",
-          "name": "摸鱼中...",
-          "icon": "$(eye)"
+          "name": "Project Index",
+          "icon": "$(files)"
         }
       ]
     },
