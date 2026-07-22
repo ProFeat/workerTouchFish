@@ -26,7 +26,6 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
 
   // 伪装模式相关
   private disguised = false;
-  private inactivityTimer: NodeJS.Timeout | undefined;
 
   isDisguised() { return this.disguised; }
 
@@ -34,18 +33,6 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
     if (this.disguised === value) return;
     this.disguised = value;
     this._onDidChangeTreeData.fire(undefined);
-  }
-
-  resetInactivityTimer() {
-    if (this.disguised) {
-      this.setDisguised(false);
-    }
-    if (this.inactivityTimer) {
-      clearTimeout(this.inactivityTimer);
-    }
-    this.inactivityTimer = setTimeout(() => {
-      this.setDisguised(true);
-    }, 3_000);
   }
 
   private generateFakeFiles(): MoyuItem[] {
@@ -194,8 +181,17 @@ export function activate(context: vscode.ExtensionContext) {
   // 启动时自动加载帖子
   provider.refresh(getCookie());
 
+  const treeView = vscode.window.createTreeView('workermoyu.sidebar', { treeDataProvider: provider });
+  context.subscriptions.push(treeView);
+
+  // 打开或点击侧边栏时显示帖子。
   context.subscriptions.push(
-    vscode.window.createTreeView('workermoyu.sidebar', { treeDataProvider: provider })
+    treeView.onDidChangeSelection(() => provider.setDisguised(false)),
+    treeView.onDidChangeVisibility(event => {
+      if (event.visible) {
+        provider.setDisguised(false);
+      }
+    })
   );
 
   context.subscriptions.push(
@@ -220,7 +216,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // 失焦自动伪装：VS Code 窗口失去焦点时
+  // 切出 VS Code 时立即伪装；切回后点击侧边栏再恢复。
   context.subscriptions.push(
     vscode.window.onDidChangeWindowState(state => {
       if (!state.focused) {
@@ -229,15 +225,13 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // 无操作自动伪装：用户停止交互 30 秒后
+  // 点击、编辑或切换代码文件时伪装侧边栏内容。
   context.subscriptions.push(
-    vscode.window.onDidChangeTextEditorSelection(() => provider.resetInactivityTimer())
+    vscode.window.onDidChangeTextEditorSelection(() => provider.setDisguised(true))
   );
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => provider.resetInactivityTimer())
+    vscode.window.onDidChangeActiveTextEditor(() => provider.setDisguised(true))
   );
-  // 启动时也初始化一次计时器
-  provider.resetInactivityTimer();
 
   // 设置 Cookie 命令：弹出输入框
   context.subscriptions.push(
