@@ -155,7 +155,7 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
 
     this.cookie = cookieFromSecrets || vscode.workspace.getConfiguration('workermoyu').get('bduss', '');
     const barName = vscode.workspace.getConfiguration('workermoyu').get('barName', '抗压背锅吧');
-    const maxPosts = vscode.workspace.getConfiguration('workermoyu').get('maxPosts', 20);
+    const maxPosts = vscode.workspace.getConfiguration('workermoyu').get('maxPosts', 25);
     const maxPages = vscode.workspace.getConfiguration('workermoyu').get('maxPages', 3);
 
     try {

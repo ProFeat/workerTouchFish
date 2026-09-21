@@ -31,7 +31,7 @@
         },
         "workermoyu.maxPosts": {
           "type": "number",
-          "default": 20,
+          "default": 25,
           "minimum": 5,
           "maximum": 50,
           "description": "侧边栏显示的帖子数量"
@@ -41,14 +41,15 @@
           "default": 3,
           "minimum": 1,
           "maximum": 10,
-          "description": "抓取帖子的页数（每页最多50条，翻页可增加数据新鲜度）"
+          "description": "抓取帖子的页数（每页最多15条，去重后按回复数筛选热门帖子）"
         }
       }
     },
     "commands": [
       {
         "command": "workermoyu.refresh",
-        "title": "刷新帖子"
+        "title": "刷新帖子",
+        "icon": "$(refresh)"
       },
       {
         "command": "workermoyu.openThread",

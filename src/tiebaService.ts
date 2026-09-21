@@ -95,7 +95,7 @@ export async function fetchThreadContent(tid: string, cookie: string, maxReplies
   }));
 }
 
-export async function fetchThreads(barName: string, cookie: string, maxCount: number = 20, maxPages: number = 1): Promise<TiebaThread[]> {
+export async function fetchThreads(barName: string, cookie: string, maxCount: number = 25, maxPages: number = 1): Promise<TiebaThread[]> {
   if (!cookie) {
     throw new Error('请先设置 Cookie（Ctrl+Shift+P → 设置 BDUSS）');
   }
@@ -107,7 +107,7 @@ export async function fetchThreads(barName: string, cookie: string, maxCount: nu
     const params: Record<string, string> = {
       kw: barName,
       pn: String(page),
-      rn: String(maxCount),
+      rn: '15',
     };
     const sign = makeSign(params);
     const query = Object.entries(params)
@@ -138,11 +138,10 @@ export async function fetchThreads(barName: string, cookie: string, maxCount: nu
         author: t.author?.name ?? '未知',
       });
 
-      if (allThreads.length >= maxCount) break;
     }
-
-    if (allThreads.length >= maxCount) break;
   }
 
-  return allThreads;
+  return allThreads
+    .sort((a, b) => b.replyNum - a.replyNum)
+    .slice(0, maxCount);
 }
