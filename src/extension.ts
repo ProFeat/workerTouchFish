@@ -1,6 +1,14 @@
 import * as vscode from 'vscode';
 import { fetchThreads, fetchThreadContent, TiebaThread, TiebaPost } from './tiebaService';
 
+const POST_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHED_THREADS = 100;
+
+interface CachedPosts {
+  expiresAt: number;
+  posts: TiebaPost[];
+}
+
 class MoyuItem extends vscode.TreeItem {
   public posts?: TiebaPost[];
 
@@ -23,6 +31,8 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
   private threads: TiebaThread[] = [];
   private loading = false;
   private cookie = '';
+  private refreshVersion = 0;
+  private readonly postCache = new Map<string, CachedPosts>();
 
   // 伪装模式相关
   private disguised = false;
@@ -99,10 +109,10 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
 
     for (const t of this.threads) {
       const item = new MoyuItem(
-        `${this.escapeHtml(t.title)}`,
+        this.formatDisplayText(t.title, 80),
         `💬 ${t.replyNum}`,
         vscode.TreeItemCollapsibleState.Collapsed,
-        `作者: ${t.author}  |  回复: ${t.replyNum}`,
+        `作者: ${this.formatDisplayText(t.author, 80)}  |  回复: ${t.replyNum}`,
         t
       );
       item.command = {
@@ -125,7 +135,21 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
     }
 
     try {
-      const posts = await fetchThreadContent(threadItem.thread.tid, this.cookie, 15);
+      const cached = this.postCache.get(threadItem.thread.tid);
+      const posts = cached && cached.expiresAt > Date.now()
+        ? cached.posts
+        : await fetchThreadContent(threadItem.thread.tid, this.cookie, 15);
+
+      if (!cached || cached.expiresAt <= Date.now()) {
+        if (this.postCache.size >= MAX_CACHED_THREADS) {
+          const oldestThreadId = this.postCache.keys().next().value;
+          if (oldestThreadId) this.postCache.delete(oldestThreadId);
+        }
+        this.postCache.set(threadItem.thread.tid, {
+          expiresAt: Date.now() + POST_CACHE_TTL_MS,
+          posts,
+        });
+      }
       threadItem.posts = posts;
       return posts.map(p => this.postToItem(p));
     } catch {
@@ -134,22 +158,31 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
   }
 
   private postToItem(post: TiebaPost): MoyuItem {
-    const label = post.content.length > 60
-      ? post.content.substring(0, 60) + '...'
-      : post.content;
+    const label = this.formatDisplayText(post.content, 60);
     return new MoyuItem(
       `#${post.floor}`,
       label,
       undefined,
-      post.content
+      this.formatDisplayText(post.content, 500)
     );
   }
 
-  private escapeHtml(text: string): string {
-    return text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
+  private formatDisplayText(text: string, maxLength: number): string {
+    const normalized = text
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/[\u0000-\u001F\u007F]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (normalized.length <= maxLength) return normalized || '(无内容)';
+    return `${normalized.slice(0, maxLength)}...`;
   }
 
   async refresh(cookieFromSecrets?: string) {
+    const refreshVersion = ++this.refreshVersion;
     this.loading = true;
     this._onDidChangeTreeData.fire(undefined);
 
@@ -159,13 +192,21 @@ class MoyuTreeProvider implements vscode.TreeDataProvider<MoyuItem> {
     const maxPages = vscode.workspace.getConfiguration('workermoyu').get('maxPages', 3);
 
     try {
-      this.threads = await fetchThreads(barName, this.cookie, maxPosts, maxPages);
-    } catch (err: any) {
-      this.threads = [];
-      vscode.window.showErrorMessage(`摸鱼失败: ${err.message}`);
+      const threads = await fetchThreads(barName, this.cookie, maxPosts, maxPages);
+      if (refreshVersion === this.refreshVersion) {
+        this.threads = threads;
+      }
+    } catch (err: unknown) {
+      if (refreshVersion === this.refreshVersion) {
+        this.threads = [];
+        const message = err instanceof Error ? err.message : '未知错误';
+        vscode.window.showErrorMessage(`摸鱼失败: ${message}`);
+      }
     } finally {
-      this.loading = false;
-      this._onDidChangeTreeData.fire(undefined);
+      if (refreshVersion === this.refreshVersion) {
+        this.loading = false;
+        this._onDidChangeTreeData.fire(undefined);
+      }
     }
   }
 }

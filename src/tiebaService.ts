@@ -1,6 +1,9 @@
 import * as https from 'https';
 import * as crypto from 'crypto';
 
+const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_RESPONSE_BYTES = 1_000_000;
+
 export interface TiebaThread {
   tid: string;
   title: string;
@@ -17,7 +20,33 @@ function makeSign(params: Record<string, string>): string {
   return crypto.createHash('md5').update(str).digest('hex').toUpperCase();
 }
 
-function httpsGetJson(path: string, cookie: string): Promise<any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function getNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function getApiError(data: unknown): string | undefined {
+  if (!isRecord(data) || data.error_code === undefined || String(data.error_code) === '0') {
+    return undefined;
+  }
+
+  return getString(data.error_msg, `API 错误 (${String(data.error_code)})`);
+}
+
+function normalizeCookieHeader(cookie: string): string {
+  const value = cookie.trim();
+  if (!value || value.includes('=')) return value;
+  return `BDUSS=${value}`;
+}
+
+function httpsGetJson(path: string, cookie: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const opts: https.RequestOptions = {
       hostname: 'tieba.baidu.com',
@@ -26,21 +55,51 @@ function httpsGetJson(path: string, cookie: string): Promise<any> {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Cookie': cookie,
+        'Cookie': normalizeCookieHeader(cookie),
       },
     };
 
-    https.get(opts, (res) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (!settled) {
+        settled = true;
+        callback();
+      }
+    };
+
+    const request = https.get(opts, (res) => {
+      const statusCode = res.statusCode ?? 0;
+      if (statusCode < 200 || statusCode >= 300) {
+        res.resume();
+        finish(() => reject(new Error(`贴吧请求失败（HTTP ${statusCode}）`)));
+        return;
+      }
+
       let data = '';
-      res.on('data', (chunk) => data += chunk);
+      let responseBytes = 0;
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        responseBytes += Buffer.byteLength(chunk, 'utf8');
+        if (responseBytes > MAX_RESPONSE_BYTES) {
+          res.destroy(new Error('贴吧响应过大'));
+          return;
+        }
+        data += chunk;
+      });
+      res.on('error', (error) => finish(() => reject(error)));
       res.on('end', () => {
         try {
-          resolve(JSON.parse(data));
+          finish(() => resolve(JSON.parse(data) as unknown));
         } catch {
-          reject(new Error('解析贴吧数据失败'));
+          finish(() => reject(new Error('解析贴吧数据失败')));
         }
       });
-    }).on('error', reject);
+    });
+
+    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      request.destroy(new Error('贴吧请求超时'));
+    });
+    request.on('error', (error) => finish(() => reject(error)));
   });
 }
 
@@ -53,12 +112,13 @@ export interface TiebaPost {
 /**
  * 提取帖子内容文本（去除表情等）
  */
-function parseContent(content: any): string {
+function parseContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return content.map((item: any) => {
-      if (item.type === 0) return item.text || '';
-      if (item.type === 2) return `[${item.c || '表情'}]`;
+    return content.map((item) => {
+      if (!isRecord(item)) return '';
+      if (item.type === 0) return getString(item.text);
+      if (item.type === 2) return `[${getString(item.c, '表情')}]`;
       if (item.type === 3) return `[图片]`;
       return '';
     }).join(' ').trim();
@@ -84,15 +144,20 @@ export async function fetchThreadContent(tid: string, cookie: string, maxReplies
   const path = `/c/f/pb/page?${query}&sign=${sign}`;
 
   const data = await httpsGetJson(path, cookie);
-  if (data.error_code && data.error_code !== '0') {
+  if (getApiError(data)) {
     return [];
   }
 
-  return (data.post_list ?? []).map((p: any) => ({
-    floor: p.floor ?? 0,
-    author: p.author?.name ?? '匿名',
-    content: parseContent(p.content),
-  }));
+  const postList = isRecord(data) && Array.isArray(data.post_list) ? data.post_list : [];
+  return postList.map((post) => {
+    const item = isRecord(post) ? post : {};
+    const author = isRecord(item.author) ? item.author : {};
+    return {
+      floor: getNumber(item.floor),
+      author: getString(author.name, '匿名'),
+      content: parseContent(item.content),
+    };
+  });
 }
 
 export async function fetchThreads(barName: string, cookie: string, maxCount: number = 25, maxPages: number = 1): Promise<TiebaThread[]> {
@@ -117,27 +182,29 @@ export async function fetchThreads(barName: string, cookie: string, maxCount: nu
 
     const data = await httpsGetJson(path, cookie);
 
-    if (data.error_code && data.error_code !== '0') {
-      throw new Error(data.error_msg || `API 错误 (${data.error_code})`);
+    const apiError = getApiError(data);
+    if (apiError) {
+      throw new Error(apiError);
     }
 
-    const threadList: any[] = data.thread_list ?? [];
+    const threadList = isRecord(data) && Array.isArray(data.thread_list) ? data.thread_list : [];
     if (threadList.length === 0) break; // 没有更多数据了
 
-    for (const t of threadList) {
-      const tid = String(t.id ?? t.tid ?? '0');
+    for (const thread of threadList) {
+      const item = isRecord(thread) ? thread : {};
+      const tid = String(item.id ?? item.tid ?? '0');
       if (seen.has(tid)) continue;
       seen.add(tid);
 
-      const title = (t.title ?? '(无标题)')
+      const title = getString(item.title, '(无标题)')
         .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const author = isRecord(item.author) ? item.author : {};
       allThreads.push({
         tid,
         title,
-        replyNum: t.reply_num ?? 0,
-        author: t.author?.name ?? '未知',
+        replyNum: getNumber(item.reply_num),
+        author: getString(author.name, '未知'),
       });
-
     }
   }
 
